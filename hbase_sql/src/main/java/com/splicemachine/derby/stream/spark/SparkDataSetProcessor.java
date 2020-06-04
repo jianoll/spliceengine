@@ -769,8 +769,6 @@ public class SparkDataSetProcessor implements DistributedDataSetProcessor, Seria
                         }
                     }
                 }
-
-
             } catch (Exception e) {
                 return handleExceptionInCaseOfEmptySet(e,location);
             }
@@ -803,30 +801,7 @@ public class SparkDataSetProcessor implements DistributedDataSetProcessor, Seria
             if (dvd == null || i != 0) {
                 dvd = q.getOrderable();
             }
-
-            Object value = dvd.getObject();
-            switch (q.getOperator()) {
-                case DataType.ORDER_OP_LESSTHAN:
-                    col=q.negateCompareResult()?col.geq(value):col.lt(value);
-                    break;
-                case DataType.ORDER_OP_LESSOREQUALS:
-                    col=q.negateCompareResult()?col.gt(value):col.leq(value);
-                    break;
-                case DataType.ORDER_OP_GREATERTHAN:
-                    col=q.negateCompareResult()?col.leq(value):col.gt(value);
-                    break;
-                case DataType.ORDER_OP_GREATEROREQUALS:
-                    col=q.negateCompareResult()?col.lt(value):col.geq(value);
-                    break;
-                case DataType.ORDER_OP_EQUALS:
-                    if (value == null) // Handle Null Case, push down into Catalyst and Hopefully Parquet/ORC
-                        col=q.negateCompareResult()?col.isNotNull():col.isNull();
-                    else
-                        col=q.negateCompareResult()?col.notEqual(value):col.equalTo(value);
-                    break;
-                default:
-                    throw new UnsupportedOperationException("Unknown operator: " + q.getOperator());
-            }
+            col = addColumnFilter(q, col, dvd.getObject());
             if (andCols ==null)
                 andCols = col;
             else
@@ -844,25 +819,7 @@ public class SparkDataSetProcessor implements DistributedDataSetProcessor, Seria
                 Column orCol = dataset.col(allColIdInSpark[q.getStoragePosition()]);
 
                 Object value = q.getOrderable().getObject();
-                switch (q.getOperator()) {
-                    case DataType.ORDER_OP_LESSTHAN:
-                        orCol = q.negateCompareResult() ? orCol.geq(value) : orCol.lt(value);
-                        break;
-                    case DataType.ORDER_OP_LESSOREQUALS:
-                        orCol = q.negateCompareResult() ? orCol.gt(value) : orCol.leq(value);
-                        break;
-                    case DataType.ORDER_OP_GREATERTHAN:
-                        orCol = q.negateCompareResult() ? orCol.leq(value) : orCol.gt(value);
-                        break;
-                    case DataType.ORDER_OP_GREATEROREQUALS:
-                        orCol = q.negateCompareResult() ? orCol.lt(value) : orCol.geq(value);
-                        break;
-                    case DataType.ORDER_OP_EQUALS:
-                        orCol = q.negateCompareResult() ? orCol.notEqual(value) : orCol.equalTo(value);
-                        break;
-                    default:
-                        throw new UnsupportedOperationException("Unknown operator: " + q.getOperator());
-                }
+                orCol = addColumnFilter(q, orCol, value);
                 if (orCols == null)
                     orCols = orCol;
                 else
@@ -876,6 +833,32 @@ public class SparkDataSetProcessor implements DistributedDataSetProcessor, Seria
             }
         }
         return andCols;
+    }
+
+    private static Column addColumnFilter(Qualifier q, Column col, Object value) throws StandardException {
+        switch (q.getOperator()) {
+            case DataType.ORDER_OP_LESSTHAN:
+                col=q.negateCompareResult()?col.geq(value):col.lt(value);
+                break;
+            case DataType.ORDER_OP_LESSOREQUALS:
+                col=q.negateCompareResult()?col.gt(value):col.leq(value);
+                break;
+            case DataType.ORDER_OP_GREATERTHAN:
+                col=q.negateCompareResult()?col.leq(value):col.gt(value);
+                break;
+            case DataType.ORDER_OP_GREATEROREQUALS:
+                col=q.negateCompareResult()?col.lt(value):col.geq(value);
+                break;
+            case DataType.ORDER_OP_EQUALS:
+                if (value == null) // Handle Null Case, push down into Catalyst and Hopefully Parquet/ORC
+                    col=q.negateCompareResult()?col.isNotNull():col.isNull();
+                else
+                    col=q.negateCompareResult()?col.notEqual(value):col.equalTo(value);
+                break;
+            default:
+                throw new UnsupportedOperationException("Unknown operator: " + q.getOperator());
+        }
+        return col;
     }
 
 
