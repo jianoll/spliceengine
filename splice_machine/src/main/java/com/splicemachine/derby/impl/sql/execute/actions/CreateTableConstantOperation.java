@@ -551,7 +551,7 @@ public class CreateTableConstantOperation extends DDLConstantOperation {
                         }
                     }
                     StructType externalSchema = result.getSchema();
-                    checkSchema(externalSchema, activation);
+                    checkSchema(externalSchema, activation, fileInfo);
                 }
 
             }
@@ -560,7 +560,7 @@ public class CreateTableConstantOperation extends DDLConstantOperation {
         }
     }
 
-    private void checkSchema(StructType externalSchema, Activation activation) throws StandardException {
+    private void checkSchema(StructType externalSchema, Activation activation, FileInfo fileInfo) throws StandardException {
 
         ExecRow template = new ValueRow(columnInfo.length);
         DataValueDescriptor[] dvds = template.getRowArray();
@@ -572,7 +572,7 @@ public class CreateTableConstantOperation extends DDLConstantOperation {
         if (externalSchema.fields().length != template.length()) {
             throw StandardException.newException(SQLState.INCONSISTENT_NUMBER_OF_ATTRIBUTE,
                     template.length(), externalSchema.fields().length,
-                    location, ExternalTableUtils.getSuggestedSchema(externalSchema));
+                    location, ExternalTableUtils.getSuggestedSchema(externalSchema, fileInfo));
         }
 
 
@@ -613,7 +613,7 @@ public class CreateTableConstantOperation extends DDLConstantOperation {
                     throw StandardException.newException(SQLState.INCONSISTENT_DATATYPE_ATTRIBUTES,
                             name_nonpart[i], ExternalTableUtils.getSqlTypeName(definedField.dataType()),
                             externalField.name(), ExternalTableUtils.getSqlTypeName(externalField.dataType() ),
-                            location, ExternalTableUtils.getSuggestedSchema(externalSchema));
+                            location, ExternalTableUtils.getSuggestedSchema(externalSchema, fileInfo));
                 }
             }
         }
@@ -627,7 +627,7 @@ public class CreateTableConstantOperation extends DDLConstantOperation {
                     Object[] objects = new Object[]{
                             name_part[i], ExternalTableUtils.getSqlTypeName(definedField.dataType()),
                             externalField.name(), ExternalTableUtils.getSqlTypeName(externalField.dataType()),
-                            location, ExternalTableUtils.getSuggestedSchema(externalSchema) };
+                            location, ExternalTableUtils.getSuggestedSchema(externalSchema, fileInfo) };
                     SQLWarning warning = StandardException.newWarning(SQLState.INCONSISTENT_DATATYPE_ATTRIBUTES, objects);
                     activation.addWarning(warning);
                 }
