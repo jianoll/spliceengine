@@ -96,9 +96,9 @@ public class ForeignKeyParentInterceptWriteHandler implements WriteHandler{
                         table = SIDriver.driver().getTableFactory().getTable(Long.toString((indexConglomerateId)));
                         childPartitions.put(indexConglomerateId, table);
                     }
-                    if (hasReferences(indexConglomerateId, table, mutation, ctx))
-                        failRow(mutation, ctx, constraintInfos.get(i));
-                    else
+//                    if (hasReferences(indexConglomerateId, table, mutation, ctx))
+//                        failRow(mutation, ctx, constraintInfos.get(i));
+//                    else
                         ctx.success(mutation);
                 }
             }

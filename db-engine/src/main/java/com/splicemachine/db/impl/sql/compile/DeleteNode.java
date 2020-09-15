@@ -1025,9 +1025,7 @@ public class DeleteNode extends DMLModStatementNode
         // Not Required for dynamic deletes.  It will be required if we attempt to do bulk
         // deletes from a file (JUN)
 
-        if (isBulkDelete) {
-            DMLModStatementNode.getXAffectedIndexes(baseTable, null, columnMap, conglomVector, true);
-        }
+        DMLModStatementNode.getXAffectedIndexes(baseTable, null, columnMap, conglomVector, true);
 
         /*
          ** If we have any DELETE triggers, then do one of the following
