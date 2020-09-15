@@ -593,7 +593,8 @@ public class FromList extends QueryTreeNodeVector<QueryTreeNode> implements Opti
      * @param gbl       The group by list, if any
      * @throws StandardException Thrown on error
      */
-    public void preprocess(int numTables, GroupByList gbl, ValueNode predicateTree) throws StandardException{
+    public void preprocess(int numTables, GroupByList gbl, ValueNode predicateTree,
+                           Map<Integer, List<ValueNode>> exprMap) throws StandardException{
         int size=size();
 
         /* Preprocess each FromTable in the list */
@@ -603,7 +604,7 @@ public class FromList extends QueryTreeNodeVector<QueryTreeNode> implements Opti
             /* Transform any outer joins to inner joins where appropriate */
             ft=ft.transformOuterJoins(predicateTree,numTables);
             /* Preprocess this FromTable */
-            setElementAt(ft.preprocess(numTables,gbl,this),index);
+            setElementAt(ft.preprocess(numTables,gbl,this, exprMap),index);
         }
     }
 

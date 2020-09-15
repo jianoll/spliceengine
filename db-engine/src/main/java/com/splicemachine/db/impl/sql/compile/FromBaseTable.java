@@ -44,6 +44,7 @@ import com.splicemachine.db.iapi.services.io.FormatableBitSet;
 import com.splicemachine.db.iapi.services.io.FormatableIntHolder;
 import com.splicemachine.db.iapi.services.sanity.SanityManager;
 import com.splicemachine.db.iapi.sql.compile.*;
+import com.splicemachine.db.iapi.sql.conn.LanguageConnectionContext;
 import com.splicemachine.db.iapi.sql.conn.SessionProperties;
 import com.splicemachine.db.iapi.sql.dictionary.*;
 import com.splicemachine.db.iapi.sql.execute.ExecRow;
@@ -200,6 +201,13 @@ public class FromBaseTable extends FromTable {
     private boolean isBulkDelete = false;
 
     private ValueNode pastTxIdExpression = null;
+
+    // expressions in whole query referencing columns in this base table
+    private List<ValueNode> referencingExpressions = null;
+
+    // stores index column positions of referencingExpressions
+    // all values are meaningful only in case of a covering index
+    private int[] indexExprPositions = null;
 
     @Override
     public boolean isParallelizable(){
@@ -512,14 +520,15 @@ public class FromBaseTable extends FromTable {
 
     @Override
     public boolean isCoveringIndex(ConglomerateDescriptor cd) throws StandardException{
-            /* You can only be a covering index if you're an index */
+        /* You can only be a covering index if you're an index */
         if(!cd.isIndex())
             return false;
 
         IndexRowGenerator irg=cd.getIndexDescriptor();
 
-        if (irg.isOnExpression())
-            return false;
+        if (irg.isOnExpression()) {
+            return areAllReferencingExprsCoveredByIndex(irg);
+        }
 
         int[] baseCols=irg.baseColumnPositions();
         int rclSize=resultColumns.size();
@@ -559,6 +568,43 @@ public class FromBaseTable extends FromTable {
             }
         }
         return coveringIndex;
+    }
+
+    private boolean areAllReferencingExprsCoveredByIndex(IndexDescriptor id) throws StandardException {
+        if (referencingExpressions == null || referencingExpressions.isEmpty()) {
+            return false;
+        }
+
+        LanguageConnectionContext lcc = getLanguageConnectionContext();
+        CompilerContext newCC = lcc.pushCompilerContext();
+        Parser p = newCC.getParser();
+
+        String[] exprTexts = id.getExprTexts();
+        ValueNode[] exprAsts = new ValueNode[exprTexts.length];
+        for (int i = 0; i < exprTexts.length; i++) {
+            ValueNode exprAst = (ValueNode) p.parseSearchCondition(exprTexts[i]);
+            PredicateList.setTableNumber(exprAst, this);
+            exprAsts[i] = exprAst;
+        }
+        lcc.popCompilerContext(newCC);
+
+        if (indexExprPositions == null) {
+            indexExprPositions = new int[referencingExpressions.size()];
+        }
+        boolean covered;
+        for (int i = 0; i < referencingExpressions.size(); i++) {
+            covered = false;
+            for (int j = 0; j < exprAsts.length; j++) {
+                if (referencingExpressions.get(i).equals(exprAsts[j])) {
+                    indexExprPositions[i] = j;
+                    covered = true;
+                    break;
+                }
+            }
+            if (!covered)
+                return false;
+        }
+        return true;
     }
 
     @Override
@@ -1569,17 +1615,21 @@ public class FromBaseTable extends FromTable {
      * @param numTables The number of tables in the DML Statement
      * @param gbl       The group by list, if any
      * @param fromList  The from list, if any
+     * @param exprMap
      * @return ResultSetNode at top of preprocessed tree.
      * @throws StandardException Thrown on error
      */
 
     public ResultSetNode preprocess(int numTables,
                                     GroupByList gbl,
-                                    FromList fromList)
+                                    FromList fromList,
+                                    Map<Integer, List<ValueNode>> exprMap)
             throws StandardException{
         /* Generate the referenced table map */
         referencedTableMap=new JBitSet(numTables);
         referencedTableMap.set(tableNumber);
+
+        referencingExpressions = exprMap.get(tableNumber);
 
         return genProjectRestrict(numTables);
     }
@@ -1782,8 +1832,11 @@ public class FromBaseTable extends FromTable {
             templateColumns=resultColumns;
             referencedCols=resultColumns.getReferencedFormatableBitSet(cursorTargetTable,isSysstatements,false,false);
             resultColumns=resultColumns.compactColumns(cursorTargetTable,isSysstatements);
+            resultColumns.setFromExprIndex(false);
             return this;
         }
+
+        boolean isOnExpression = trulyTheBestConglomerateDescriptor.getIndexDescriptor().isOnExpression();
 
         /* No need to go to the data page if this is a covering index */
         /* Derby-1087: use data page when returning an updatable resultset */
@@ -1809,17 +1862,25 @@ public class FromBaseTable extends FromTable {
                 resultColumns.addRCForRID();
             }
 
+            if (isOnExpression) {
+                resultColumns.markAllUnreferenced();
+                for (int indexPosition : indexExprPositions) {
+                    resultColumns.elementAt(indexPosition).setReferenced();
+                }
+            }
+
             /* Compact RCL down to the partial row.  We always want a new
              * RCL and FormatableBitSet because this is a covering index.  (This is
              * because we don't want the RID in the partial row returned
              * by the store.)
              */
             referencedCols=resultColumns.getReferencedFormatableBitSet(cursorTargetTable,true,false,true);
-                        resultColumns=resultColumns.compactColumns(cursorTargetTable,true);
+            resultColumns=resultColumns.compactColumns(cursorTargetTable,true);
 
             resultColumns.setIndexRow(
                     baseConglomerateDescriptor.getConglomerateNumber(),
                     forUpdate());
+            resultColumns.setFromExprIndex(isOnExpression);
 
             return this;
         }
@@ -1897,7 +1958,7 @@ public class FromBaseTable extends FromTable {
         ** result set is the compacted column list.
         */
         resultColumns=newResultColumns;
-        if (trulyTheBestConglomerateDescriptor.getIndexDescriptor().isOnExpression()) {
+        if (isOnExpression) {
             templateColumns = resultColumns.copyListAndObjects();
             /* newResultColumns was built with all columns set to referenced. But we only
              * need index columns referenced in predicates since all expression-based
@@ -1938,6 +1999,7 @@ public class FromBaseTable extends FromTable {
         resultColumns.setIndexRow(
                 baseConglomerateDescriptor.getConglomerateNumber(),
                 forUpdate());
+        resultColumns.setFromExprIndex(isOnExpression);
 
         /* We must remember if this was the cursorTargetTable
           * in order to get the right locking on the scan.
@@ -1986,21 +2048,29 @@ public class FromBaseTable extends FromTable {
                         getContextManager());
 
         if (irg.isOnExpression()) {
-            // When building new ResultColumn instances, we don't need to set expression
-            // or virtual column number as they are not needed. In case of a scan on an
-            // expression-based index, these are just placeholders. All we care about is
-            // that they should all be referenced for now so that we can build the
-            // template row, then we will clear reference status and set them properly.
+            LanguageConnectionContext lcc = getLanguageConnectionContext();
+            CompilerContext newCC = lcc.pushCompilerContext();
+            Parser p = newCC.getParser();
+
+            String[] exprTexts = irg.getExprTexts();
             DataTypeDescriptor[] indexColumnTypes = irg.getIndexColumnTypes();
-            for (DataTypeDescriptor dtd : indexColumnTypes) {
+
+            for (int i = 0; i < indexColumnTypes.length; i++) {
+                ValueNode exprAst = (ValueNode) p.parseSearchCondition(exprTexts[i]);
+                PredicateList.setTableNumber(exprAst, this);
+
                 ResultColumn rc = (ResultColumn) getNodeFactory().getNode(
                         C_NodeTypes.RESULT_COLUMN,
-                        dtd,
-                        null,
+                        indexColumnTypes[i],
+                        exprAst,
                         getContextManager());
+                rc.setIndexExpression(exprAst);
                 rc.setReferenced();
+                rc.setVirtualColumnId(i + 1);  // virtual column IDs are 1-based
+                rc.setName(idxCD.getConglomerateName() + "_" + rc.getColumnPosition());
                 newCols.addResultColumn(rc);
             }
+            lcc.popCompilerContext(newCC);
         } else {
             int[] baseCols = irg.baseColumnPositions();
             for (int basePosition : baseCols) {
