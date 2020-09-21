@@ -65,14 +65,17 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.log4j.Logger;
+import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.Function;
+import org.apache.spark.scheduler.*;
 import org.apache.spark.sql.*;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import scala.Tuple2;
+import scala.collection.JavaConverters;
 
 import java.io.Externalizable;
 import java.io.FileNotFoundException;
@@ -345,7 +348,6 @@ public class SparkDataSetProcessor implements DistributedDataSetProcessor, Seria
         try {
             Dataset<Row> table = null;
             ExternalTableUtils.preSortColumns(tableSchema.fields(), partitionColumnMap);
-
             try {
                 table = SpliceSpark.getSession()
                         .read()

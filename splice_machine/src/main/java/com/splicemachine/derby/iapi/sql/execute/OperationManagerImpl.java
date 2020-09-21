@@ -53,6 +53,7 @@ public class OperationManagerImpl implements OperationManager {
     }
 
     public List<Pair<UUID, RunningOperation>> runningOperations(String userId) {
+        //
         List<Pair<UUID, RunningOperation>> result = new ArrayList<>(operations.size());
         for (Map.Entry<UUID, RunningOperation> entry : operations.entrySet()) {
             Activation activation = entry.getValue().getOperation().getActivation();
@@ -82,7 +83,6 @@ public class OperationManagerImpl implements OperationManager {
 
         drdaOperations.remove(uuid);
         operations.remove(op.getUuid());
-        
         op.getOperation().kill();
         op.getThread().interrupt();
         ResultSet rs=activation.getResultSet();

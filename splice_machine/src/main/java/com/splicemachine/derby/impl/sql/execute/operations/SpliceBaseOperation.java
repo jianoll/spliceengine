@@ -299,6 +299,7 @@ public abstract class SpliceBaseOperation implements SpliceOperation, ScopeNamed
         try {
             DataSetProcessor dsp = EngineDriver.driver().processorFactory().chooseProcessor(activation, this);
             String intTkn = activation.getLanguageConnectionContext().getRdbIntTkn();
+            // hm!
             uuid = EngineDriver.driver().getOperationManager().registerOperation(this, Thread.currentThread(),new Date(), dsp.getType(), intTkn);
             logExecutionStart(dsp);
             openCore();

@@ -1207,6 +1207,7 @@ public class SubqueryNode extends ValueNode{
                 executeMB.push(resultSetNumber);
                 executeMB.callMethod(VMOpcode.INVOKEVIRTUAL, ClassName.BaseActivation, "materializeResultSetIfPossible",ClassName.NoPutResultSet,2);
                 executeMB.setField(subRS);
+
             }
 
             executeMB.pushNull(ClassName.NoPutResultSet);

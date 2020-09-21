@@ -1839,12 +1839,12 @@ public class SpliceAdmin extends BaseAdminProcedures{
             userId = null;
         }
 
+        //
         List<Pair<UUID, RunningOperation>> operations = EngineDriver.driver().getOperationManager().runningOperations(userId);
 
         SConfiguration config=EngineDriver.driver().getConfiguration();
         String host_port = NetworkUtils.getHostname(config) + ":" + config.getNetworkBindPort();
         final String timeStampFormat = "yyyy-MM-dd HH:mm:ss";
-
         List<ExecRow> rows = new ArrayList<>(operations.size());
         for (Pair<UUID, RunningOperation> pair : operations)
         {
@@ -1864,6 +1864,7 @@ public class SpliceAdmin extends BaseAdminProcedures{
 
             row.setColumn(7, new SQLVarchar(getElapsedTimeStr(ro.getSubmittedTime(),new Date()))); // ELAPSED
             row.setColumn(8, new SQLVarchar(ro.getEngineName())); // ENGINE
+//            row.setColumn(9, new SQLVarchar(ro.getOperation().getScopeName())); // JOBTYPE
             row.setColumn(9, new SQLVarchar(ro.getOperation().getScopeName())); // JOBTYPE
             rows.add(row);
         }
