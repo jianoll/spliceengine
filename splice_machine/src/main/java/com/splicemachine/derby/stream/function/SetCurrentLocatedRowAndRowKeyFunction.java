@@ -36,6 +36,10 @@ public class SetCurrentLocatedRowAndRowKeyFunction<Op extends SpliceOperation> e
 
     @Override
     public ExecRow call(ExecRow locatedRow) throws Exception {
+        if (getOperation() == null) {
+            int i = 0;
+            i++;
+        }
         getOperation().setCurrentRow(locatedRow);
         getOperation().setCurrentRowLocation(new HBaseRowLocation(locatedRow.getKey()));
         StreamLogUtils.logOperationRecord(locatedRow, operationContext);

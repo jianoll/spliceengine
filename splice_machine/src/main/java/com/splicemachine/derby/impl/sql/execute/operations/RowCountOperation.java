@@ -14,6 +14,7 @@
 
 package com.splicemachine.derby.impl.sql.execute.operations;
 
+import com.splicemachine.client.SpliceClient;
 import com.splicemachine.db.iapi.error.StandardException;
 import com.splicemachine.db.iapi.services.loader.GeneratedMethod;
 import com.splicemachine.db.iapi.sql.Activation;
@@ -193,9 +194,10 @@ public class RowCountOperation extends SpliceBaseOperation {
         if (!isOpen)
             throw new IllegalStateException("Operation is not open");
 
-        if (bypass) {
+        if (!SpliceClient.isRegionServer) {
             return source.getDataSet(dsp);
         }
+
         final long fetchLimit = getFetchLimit();
         long offset = getTotalOffset();
         OperationContext operationContext = dsp.createOperationContext(this);

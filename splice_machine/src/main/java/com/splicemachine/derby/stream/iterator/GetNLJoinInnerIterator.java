@@ -41,6 +41,10 @@ public class GetNLJoinInnerIterator extends GetNLJoinIterator {
             init();
         OperationContext ctx = getCtx();
         JoinOperation op = (JoinOperation) ctx.getOperation();
+        if (op == null) {
+            int i =0;
+            i++;
+        }
         op.getLeftOperation().setCurrentRow(this.locatedRow);
         SpliceOperation rightOperation=op.getRightOperation();
 

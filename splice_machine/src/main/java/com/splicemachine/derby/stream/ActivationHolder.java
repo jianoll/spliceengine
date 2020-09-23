@@ -15,9 +15,11 @@
 package com.splicemachine.derby.stream;
 
 import com.splicemachine.EngineDriver;
+import com.splicemachine.client.SpliceClient;
 import com.splicemachine.db.iapi.error.StandardException;
 import com.splicemachine.db.iapi.services.context.ContextService;
 import com.splicemachine.db.iapi.sql.Activation;
+import com.splicemachine.db.iapi.sql.ResultSet;
 import com.splicemachine.db.iapi.sql.conn.LanguageConnectionContext;
 import com.splicemachine.db.iapi.store.access.TransactionController;
 import com.splicemachine.db.iapi.store.access.conglomerate.TransactionManager;
@@ -27,11 +29,9 @@ import com.splicemachine.db.impl.jdbc.EmbedConnectionContext;
 import com.splicemachine.db.impl.sql.catalog.ManagedCache;
 import com.splicemachine.derby.iapi.sql.execute.SpliceOperation;
 import com.splicemachine.derby.iapi.sql.execute.SpliceOperationContext;
-import com.splicemachine.derby.impl.sql.execute.operations.SpliceBaseOperation;
 import com.splicemachine.derby.impl.store.access.BaseSpliceTransaction;
 import com.splicemachine.derby.jdbc.SpliceTransactionResourceImpl;
 import com.splicemachine.derby.serialization.SpliceObserverInstructions;
-import com.splicemachine.derby.utils.StatisticsOperation;
 import com.splicemachine.pipeline.Exceptions;
 import com.splicemachine.si.api.txn.TxnView;
 import com.splicemachine.si.impl.driver.SIDriver;
@@ -97,11 +97,16 @@ public class ActivationHolder implements Externalizable {
         if(activation.getResultSet()!=null){
             operationsList.add((SpliceOperation) activation.getResultSet());
         }
-        if (operation instanceof StatisticsOperation) {
-            // special case for StatisticsOperation
-            operationsList.add(operation);
-            serializeOperationList = true;
-        }
+        //try {
+            ResultSet rs = activation.getResultSet();
+            if (rs.getClass().getName().compareToIgnoreCase(operation.getClass().getName()) != 0) {
+                // special case for StatisticsOperation
+                operationsList.add(operation);
+                serializeOperationList = true;
+            }
+//        } catch (StandardException e) {
+//            throw new RuntimeException(e);
+//        }
 
         for (Field field : activation.getClass().getDeclaredFields()) {
             if(!field.getType().isAssignableFrom(SpliceOperation.class)) continue; //ignore qualifiers
@@ -225,7 +230,9 @@ public class ActivationHolder implements Externalizable {
             activation = soi.getActivation(this, txnResource.getLcc());
             activation.getLanguageConnectionContext().setCurrentUser(activation, currentUser);
             activation.getLanguageConnectionContext().setCurrentGroupUser(activation, groupUsers);
-            SpliceOperation operation = (SpliceOperation)activation.fillResultSet();
+            SpliceOperation operation =
+                    reinit ? (SpliceOperation)activation.execute() : (SpliceOperation)activation.getResultSet();
+
             initOperation(activation, operation);
             // Push internal connection to the current context manager
             EmbedConnection internalConnection = (EmbedConnection)EngineDriver.driver().getInternalConnection();
@@ -263,6 +270,9 @@ public class ActivationHolder implements Externalizable {
         } else
             groupUsers = null;
         propertyCache = (ManagedCache<String, Optional<String>>) in.readObject();
+        if (!serializeOperationList) {
+            init(txn, true);
+        }
     }
 
     public void setActivation(Activation activation) {
