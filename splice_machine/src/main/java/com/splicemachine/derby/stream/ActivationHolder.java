@@ -18,6 +18,7 @@ import com.splicemachine.EngineDriver;
 import com.splicemachine.db.iapi.error.StandardException;
 import com.splicemachine.db.iapi.services.context.ContextService;
 import com.splicemachine.db.iapi.sql.Activation;
+import com.splicemachine.db.iapi.sql.ResultSet;
 import com.splicemachine.db.iapi.sql.conn.LanguageConnectionContext;
 import com.splicemachine.db.iapi.store.access.TransactionController;
 import com.splicemachine.db.iapi.store.access.conglomerate.TransactionManager;
@@ -70,6 +71,7 @@ public class ActivationHolder implements Externalizable {
     private String currentUser;
     private List<String> groupUsers = null;
     private ManagedCache<String, Optional<String>> propertyCache = null;
+    private boolean serializeOperationTree;
 
     public ActivationHolder() {
 
@@ -78,35 +80,15 @@ public class ActivationHolder implements Externalizable {
     public ActivationHolder(Activation activation, SpliceOperation operation) {
         this.activation = activation;
         this.initialized = true;
-        addSubOperations(operationsMap, operation);
-        addSubOperations(operationsMap, (SpliceOperation) activation.getResultSet());
-        if(activation.getResultSet()!=null){
-            operationsList.add((SpliceOperation) activation.getResultSet());
+        try {
+            SpliceOperation rs = (SpliceOperation) (activation.getResultSet() != null ?
+                    activation.getResultSet() : activation.fillResultSet());
+            this.serializeOperationTree =
+                    rs != null && (rs.resultSetNumber() != operation.resultSetNumber());
+            initOperations(activation, operation, false);
         }
-        if (operation instanceof StatisticsOperation) {
-            // special case for StatisticsOperation
-            operationsList.add(operation);
-        }
-
-        for (Field field : activation.getClass().getDeclaredFields()) {
-            if(!field.getType().isAssignableFrom(SpliceOperation.class)) continue; //ignore qualifiers
-
-            boolean isAccessible = field.isAccessible();
-            if(!isAccessible)
-                field.setAccessible(true);
-
-            try {
-                SpliceOperation so = (SpliceOperation) field.get(activation);
-                if (so == null) {
-                    continue;
-                }
-                if (!operationsMap.containsKey(so.resultSetNumber())) {
-                    addSubOperations(operationsMap, so);
-                    operationsList.add(so);
-                }
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException(e);
-            }
+        catch (StandardException se) {
+            throw new RuntimeException(se);
         }
         try {
             txn = operation != null ? operation.getCurrentTransaction() : getTransaction(activation);
@@ -118,6 +100,46 @@ public class ActivationHolder implements Externalizable {
         this.groupUsers = activation.getLanguageConnectionContext().getCurrentGroupUser(activation);
     }
 
+    private void initOperations(Activation activation, SpliceOperation operation, boolean reinit) throws StandardException {
+        addSubOperations(operationsMap, operation);
+        addSubOperations(operationsMap, (SpliceOperation) activation.getResultSet());
+        if(activation.getResultSet() != null){
+            operationsList.add((SpliceOperation) activation.getResultSet());
+        }
+        if (operation instanceof StatisticsOperation) {
+            // special case for StatisticsOperation
+            operationsList.add(operation);
+        }
+
+        try {
+            for (Field field : activation.getClass().getDeclaredFields()) {
+                if (!field.getType().isAssignableFrom(SpliceOperation.class)) continue; //ignore qualifiers
+
+                boolean isAccessible = field.isAccessible();
+                if (!isAccessible)
+                    field.setAccessible(true);
+
+                SpliceOperation so = (SpliceOperation) field.get(activation);
+                if (so == null) {
+                    continue;
+                }
+                if (!operationsMap.containsKey(so.resultSetNumber())) {
+                    addSubOperations(operationsMap, so);
+                    operationsList.add(so);
+                }
+
+            }
+
+            if (reinit) {
+                SpliceOperationContext context = SpliceOperationContext.newContext(activation);
+                for (SpliceOperation so : operationsList) {
+                    so.init(context);
+                }
+            }
+        } catch ( Exception e) {
+            throw StandardException.plainWrapException(e);
+        }
+    }
     public void newTxnResource() throws StandardException{
         try {
             SpliceTransactionResourceImpl txnResource = impl.get();
@@ -178,7 +200,10 @@ public class ActivationHolder implements Externalizable {
         if(soi==null){
             soi = SpliceObserverInstructions.create(this);
         }
-        out.writeObject(operationsList);
+        out.writeBoolean(serializeOperationTree);
+        if (serializeOperationTree) {
+            out.writeObject(operationsList);
+        }
         out.writeObject(soi);
         SIDriver.driver().getOperationFactory().writeTxnStack(txn,out);
         if (currentUser != null) {
@@ -233,10 +258,12 @@ public class ActivationHolder implements Externalizable {
 
     @Override
     public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-        operationsList = (List<SpliceOperation>) in.readObject();
-        operationsMap = Maps.newHashMap();
-        for (SpliceOperation so : operationsList) {
-            addSubOperations(operationsMap, so);
+        serializeOperationTree = in.readBoolean();
+        if (serializeOperationTree) {
+            operationsList = (List<SpliceOperation>) in.readObject();
+            for (SpliceOperation so : operationsList) {
+                addSubOperations(operationsMap, so);
+            }
         }
         soi = (SpliceObserverInstructions) in.readObject();
         txn = SIDriver.driver().getOperationFactory().readTxnStack(in);
@@ -249,6 +276,14 @@ public class ActivationHolder implements Externalizable {
         } else
             groupUsers = null;
         propertyCache = (ManagedCache<String, Optional<String>>) in.readObject();
+        if (!serializeOperationTree) {
+            try {
+                activation = getActivation();
+                initOperations(activation, (SpliceOperation) activation.execute(), true);
+            } catch (StandardException e) {
+                new RuntimeException(e);
+            }
+        }
     }
 
     public void setActivation(Activation activation) {
