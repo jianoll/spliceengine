@@ -412,7 +412,7 @@ public class AlterTableConstantOperation extends IndexConstantOperation {
             properties, // properties
             tableType == TableDescriptor.GLOBAL_TEMPORARY_TABLE_TYPE ?
                 (TransactionController.IS_TEMPORARY | TransactionController.IS_KEPT) :
-                TransactionController.IS_DEFAULT);
+                TransactionController.IS_DEFAULT, 0);
 
         // follow thru with remaining constraint actions, create, store, etc.
         constraint.executeConstantAction(activation);
@@ -629,7 +629,7 @@ public class AlterTableConstantOperation extends IndexConstantOperation {
             properties, // properties
             tableType == TableDescriptor.GLOBAL_TEMPORARY_TABLE_TYPE ?
                 (TransactionController.IS_TEMPORARY | TransactionController.IS_KEPT) :
-                TransactionController.IS_DEFAULT);
+                TransactionController.IS_DEFAULT, 0);
 
         /*
          * modify the conglomerate descriptor with the new conglomId
