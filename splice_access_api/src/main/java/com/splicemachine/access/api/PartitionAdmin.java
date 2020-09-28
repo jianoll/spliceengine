@@ -21,7 +21,6 @@ import com.splicemachine.storage.PartitionServer;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 
 /**
  * @author Scott Fines
@@ -84,4 +83,9 @@ public interface PartitionAdmin extends AutoCloseable{
     void setCatalogVersion(long conglomerateNumber, String version) throws IOException;
 
     String getCatalogVersion(long conglomerateNumber) throws StandardException;
+
+    /**
+     * @return number of tables upgraded
+     */
+    int upgradeTablePriorities() throws Exception;
 }
